@@ -1,0 +1,8 @@
+{
+    "typeCheckingMode": "basic",
+    "stubPath": "./stubs",
+    "extraPaths": [
+        "./stubs"
+    ],
+    "pythonVersion": "3.7"
+}

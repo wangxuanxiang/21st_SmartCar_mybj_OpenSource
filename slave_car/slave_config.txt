@@ -1,0 +1,188 @@
+# 修改时间 8.12  21:01
+
+###################【PID参数】####################
+# speed等于180时
+ul_high_kp = 70.0
+ul_high_ki = 0.37
+ul_high_kd = 30.0
+ur_high_kp = 70.0
+ur_high_ki = 0.37
+ur_high_kd = 30.0
+md_high_kp = 70.0
+md_high_ki = 0.37
+md_high_kd = 30.0
+# speed等于120时
+ul_mid_kp = 60.0
+ul_mid_ki = 0.3
+ul_mid_kd = 20.0
+ur_mid_kp = 60.0
+ur_mid_ki = 0.3
+ur_mid_kd = 2.0
+md_mid_kp = 60.0
+md_mid_ki = 0.3
+md_mid_kd = 20.0
+# speed等于50时
+ul_low_kp = 45.0
+ul_low_ki = 0.25
+ul_low_kd = 20.0
+ur_low_kp = 45.0
+ur_low_ki = 0.25
+ur_low_kd = 20.0
+md_low_kp = 45.0
+md_low_ki = 0.25
+md_low_kd = 20.0
+# 速度前馈系数
+kv = 30.0
+integral_limitmax = 10000
+pwmout_limitmax = 9000
+
+angle_normal_kp = 20.0
+angle_normal_kd = 0.0
+# 角速度负反馈系数（gkd应为负）
+gkd = -0.08
+high_angle_pwmout_limitmax = 450
+low_angle_pwmout_limitmax = 360
+# A设置为B的2倍左右
+A = 180
+# B大致为最大静差的1.5倍
+B = 100
+
+###################【系数】####################
+# 速度转换系数(不需要调试)
+speed_conversion_gamma = 3.0
+# 速度互补滤波系数（弱滤波）
+speed_fuse_ratio = 0.1
+# 陀螺仪补偿系数(不需要调试)
+gyro_z_supply = 1.147386
+
+###################【时间规划】####################
+motor_control_T = 4
+plan_calculate_T = 10
+uart_and_menu_T = 53
+
+###################【路径规划】####################
+final_threshold = 1.0
+branch_threshold = 3.0
+
+error_x_T = 2.0
+error_x_S = 2.0
+error_x_B = 2.0
+
+###################【风扇控制】####################
+if_fan = 1
+fixed_high_level_us = 1300
+
+###################【速度规划】####################
+min_start_v = 40
+long_v_max = 180
+find_line_v_max = 80
+acc_normal_coef = 0.03
+dec_coef = 0.08
+
+orbit_v_max = 120
+orbit_v_min = 30
+
+###################【视觉伺服】####################
+# 普通的视觉伺服pid参数
+servo_kp_normal_x = 9.0
+servo_kd_normal_x = 5.0
+servo_kp_normal_y = 9.0
+servo_kd_normal_y = 5.0
+
+servo_target_y_T = 2.0
+servo_target_y_S = -1.5
+servo_target_y_B = 3.0
+# 普通的视觉伺服阈值
+finish_threshold_x = 1.1
+finish_threshold_y = 1.1
+
+min_rel_speed = 30
+max_rel_speed = 130
+servo_pwmout_limitmax = 130
+
+###################【tof距离控制】####################
+dist_kp = 16.0
+dist_kd = 5.0
+target_T = 14.0
+target_S = 13.0
+target_B = 15.0
+car_dist_increment = 2.0
+dist_deadzone = 0.5
+tof_valid_min = 5.0
+tof_valid_max = 45.0
+dist_pwmout_limitmax = 120
+###################【环绕控制】####################
+radius_T_U = 17.0
+radius_T_R = 14.0
+radius_T_L = 14.0
+radius_T_D = 16.0
+radius_T_vision = 20.0
+
+radius_S_U = 14.0
+radius_S_R = 16.0
+radius_S_L = 16.0
+radius_S_D = 14.5
+radius_S_vision = 17.0
+
+radius_B_U = 16.0
+radius_B_R = 19.0
+radius_B_L = 19.0
+radius_B_D = 16.0
+radius_B_vision = 20.0
+
+angle_T = 42
+angle_S = 44
+angle_B = 47
+
+#推动内收因子
+CLAMP_FACTOR = 1.08
+NUM_CLAMP_FACTOR = 0.2
+#内收距离
+TENNIS_cla_dis = 2.1
+SANDBAG_cla_dis = 2.5
+BEAR_cla_dis = 2.4
+
+#！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！
+#是否使用模型servo
+if_model = 1
+# 是否需要障碍物
+if_obstacles = 0
+# 环绕是否进行视觉闭环
+if_use_vision = 0
+# 是否完成盲盒
+IF_BLIND_BOX = 1
+# 开始扫描的距离阈值
+start_scan_range = 7.0
+# 小车后退的距离
+retreat_lenth = 20.0
+
+#--------------障碍相关---------------------
+#障碍物位置
+cube_obstacles = "(45, 132, 15, 35), (270, 78.5, 30, 25)"
+circle = "(157, 210)"
+#惯导避障膨胀半径
+SAFE_MARGIN = 15.0
+# 根据主车位置矫正从车位置的距离 
+calibrate_dist = 23.0
+
+#--------------场地相关---------------------
+CENTER_X = 147.0
+CENTER_Y = 115.0
+
+FIELD_W = 315.0
+FIELD_H = 235.0
+
+#九宫格长宽
+SUDOKU_length_x = 30.0
+SUDOKU_width_y = 30.0
+
+# 惯导矩形缩放比例（根据九宫格长度）
+rect_zoom_rate = 1.8
+# 视觉矩形缩放比例
+vision_rect_zoom_rate = 1.7
+
+# 不同物体的搬运速度
+move_v_max_T = 160
+move_v_max_S = 140
+move_v_max_B = 160
+move_S_increment = 3

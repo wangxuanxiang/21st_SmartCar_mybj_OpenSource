@@ -19,7 +19,7 @@ UART_BAUDRATE = 115200
 CAMERA_PIXFORMAT = sensor.RGB565
 CAMERA_FRAMESIZE = sensor.QQVGA  # 160x120
 CAMERA_FRAMERATE = 60
-CAMERA_BRIGHTNESS = 800
+CAMERA_BRIGHTNESS = 600 # 800在plus上可能导致apriltag识别失败，降低亮度可以改善
 
 # 屏幕尺寸
 SCREEN_WIDTH = 160
@@ -30,6 +30,7 @@ SCREEN_CENTER_Y = SCREEN_HEIGHT // 2  # 60
 # 卡尔曼滤波配置
 KALMAN_MAX_LOST_FRAMES = 3
 MAX_SPEED = 80
+JUMP_KALMAN_THRESHOLD = 30  # 卡尔曼预测跳变超过30像素视为异常
 
 # 通信协议常量
 PROTOCOL_HEADER1 = 0xA5
@@ -37,6 +38,15 @@ PROTOCOL_HEADER2_COORD = 0xA6
 PROTOCOL_HEADER2_ANGLE = 0xA7
 PROTOCOL_HEADER2_APRILTAG = 0xA8
 PROTOCOL_FOOTER = 0x5B
+
+# 颜色标签映射（label → 名称）
+LABEL_TO_COLOR = {
+    0: 'red',
+    1: 'blue',
+    2: 'brown',
+    3: 'white',
+    4: 'green'
+}
 
 # 颜色类型ASCII码映射
 COLOR_TYPE_MAP = {
@@ -60,59 +70,10 @@ DRAW_COLORS = {
     'brown': (150, 75, 0)    # 棕色玩具熊
 }
 
-# 多套阈值
-THRESHOLD = {'dark':{
-    'brown':[(20, 66, -5, 23, 19, 66), # 27
-    (14, 61, -7, 18, 12, 52)], # 30
-    'red':[(15, 39, 18, 59, 17, 49), # 27
-    (5, 34, 8, 52, -7, 41)], # 30
-    'green':[(35, 84, -47, -20, -20, 87), # 27(new)
-    # (35, 84, -47, -14, -20, 87), # 27
-    # (32, 85, -43, -12, 13, 84), # 30
-    (32, 85, -43, -20, 13, 84)], # 30(new)
-    'blue':[(25, 53, -29, -9, -26, -8), # 27
-    (17, 58, -24, -3, -36, -17), # 29
-    (18, 53, -20, -5, -35, -13)], # 30
-    'white':[# (47, 76, -17, 0, 2, 39),  # 27
-    (31, 72, -18, 0, 8, 50), # 26(new)
-    (39, 79, -15, 2, -5, 9)] # 30
-}, 'normal':{
-    'brown':[(40, 83, -6, 22, 11, 69), # 45
-    (31, 94, -5, 22, 8, 67)], # 50
-
-    'red':[(32, 55, 38, 85, -23, 52), # 45
-    (25, 56, 34, 87, 11, 53)], # 50
-    'green':[# (58, 100, -49, -20, 44, 97), # 45
-    (34, 73, -36, -17, 24, 74), # 46(new)
-    # (71, 98, -52, -10, 39, 98)], # 50
-    (71, 98, -52, -10, 68, 98)], # 50(new)
-    'blue':[(33, 79, -29, -2, -52, -30), # 45(new)
-    # (33, 79, -29, -2, -52, -24), # 45
-    (33, 74, -31, -8, -46, -16), # 42
-    (44, 83, -33, -6, -54, -27)], # 50
-    'white':[(56, 100, -18, 0, -9, 16), # 45
-    (53, 100, -30, -2, -2, 53), # 46(new)
-    (59, 100, -26, -2, 3, 56), # 50(new)
-    (69, 100, -23, 5, -5, 24)] # 50
-}, 'bright':{
-    'brown':[(40, 83, -6, 22, 11, 69)],
-    'red':[(5, 24, 12, 41, -5, 37), (30, 58, 39, 83, 10, 51)],
-    'green':[(17, 67, -33, -15, -15, 68), (53, 100, -51, -15, -20, 95)],
-    'blue':[(13, 35, -24, -9, -18, -7), (37, 77, -31, -4, -54, -26)],
-    'white':[(91, 100, -23, 4, -7, 20)] # 65
-}
-            }
-
-# 亮度区间划分
-BRIGHTNESS_RANGES = {
-    'dark':(0, 40),
-    'normal':(40, 75),
-    'bright':(75, 100)
-}
-
-# 锁定的阈值集
-LOCKED_THRESHOLD = None
-LOCKED_TYPE = ''
+#设置模型路径
+face_detect = '/sd/yolo3_iou_smartcar_final_with_post_processing.tflite'
+#载入模型
+net = tf.load(face_detect)
 
 # ======================== 通信模块 ========================
 class Communicator:
@@ -177,9 +138,6 @@ class Communicator:
         )
         self.uart.write(data)
 
-    def warn(self):
-        self.uart.write('N'.encode('utf-8'))
-
 # ======================== 卡尔曼跟踪模块 ========================
 class KalmanTracker:
     MAX_LOST_FRAMES = KALMAN_MAX_LOST_FRAMES
@@ -196,7 +154,7 @@ class KalmanTracker:
         ], dtype=np.float)
 
         # 测量噪声R
-        self.R = np.diag([0.1, 0.1, 0.3, 0.3, 1, 1])
+        self.R = np.diag([0.5, 0.5, 1.5, 1.5, 2, 2])
 
         # 初始化状态
         self.reset()
@@ -221,7 +179,7 @@ class KalmanTracker:
         """
         # 动态设置Q值和阻尼系数
         if is_detected:
-            Q_value = [0.05, 0.05, 0.05, 0.05, 0.5, 0.5]
+            Q_value = [0.02, 0.02, 0.02, 0.02, 0.2, 0.2]
             damping = 0.98
             self.lost_count = 0
         else:
@@ -267,104 +225,85 @@ class KalmanTracker:
 
         return self.x_hat
     
-# ======================== 颜色检测模块 ========================
-class ColorDetector:
-    # 距离阈值（过滤过近的色块）
-    DISTANCE_THRESHOLD = 100
+# ======================== 模型检测模块  ========================
+class ModelDetector:
+    def __init__(self, net):
+        self.net = net
 
-    @staticmethod
-    def calculate_distance(x1, y1, x2, y2):
-        """计算两点间欧氏距离"""
-        return (x1 - x2)**2 + (y1 - y2)**2
+    def detect(self, img):
+        """模型检测，返回检测结果列表"""
+        img1 = img.copy(0.75, 1)
+        return tf.detect(self.net, img1)
+    
+    # def detect_and_draw(self, img, center):    
+    #     img1 = img.copy(0.75, 1)
+    #     for obj in tf.detect(self.net, img1):
+    #             x1,y1,x2,y2,label,scores = obj
+    #             if(scores>0.60):
+    #                 x1 = int(x1 * img.width())
+    #                 y1 = int(y1 * img.height())
+    #                 x2 = int(x2 * img.width())
+    #                 y2 = int(y2 * img.height())
 
-    def detect_colors(self, img):
-        """检测所有颜色色块并返回（带颜色标签）"""
-        current_threshold = LOCKED_THRESHOLD
-        # 检测各颜色色块
-        brown_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=140, area_threshold=140, merge=True)
-        white_blobs = img.find_blobs(current_threshold['white'], pixels_threshold=200, area_threshold=200, merge=True)
-        red_blobs   = img.find_blobs(current_threshold['red'],   pixels_threshold=65,  area_threshold=65,  merge=True)
-        green_blobs = img.find_blobs(current_threshold['green'], pixels_threshold=30,  area_threshold=30,  merge=True)
-        blue_blobs  = img.find_blobs(current_threshold['blue'],  pixels_threshold=80,  area_threshold=80,  merge=True)
-
-        # 整合所有色块并添加颜色标签
-        all_blobs = []
-        for blob in brown_blobs: all_blobs.append((blob, 'brown'))
-        for blob in white_blobs: all_blobs.append((blob, 'white'))
-        for blob in red_blobs:   all_blobs.append((blob, 'red'))
-        for blob in green_blobs: all_blobs.append((blob, 'green'))
-        for blob in blue_blobs:  all_blobs.append((blob, 'blue'))
-        return all_blobs
-
-    def filter_all_blobs(self, blobs):
-        """过滤无效色块（密度、像素数、长宽比、距离）"""
-        filtered = []
-        for blob, color in blobs:
-            # 密度过滤（排除稀疏色块）
-            if blob.density() < 0.4 and color not in ('white', 'brown'):
-                continue
-            elif color in ('white', 'brown') and blob.density() < 0.3:
-                continue
-            #elif color == 'blue' and blob.density() < 0.4:
-                #continue
-
-            # 长宽比过滤（不同颜色有不同规则）
-            if color == 'brown' and (blob.w() > 3.5 * blob.h() or blob.h() > 3.5 * blob.w()):
-                continue
-            elif color == 'white' and (blob.w() > 3.5 * blob.h() or blob.h() > 3.5 * blob.w()):
-                continue
-            elif color == 'green' and (blob.w() > 2 * blob.h() or blob.h() > 2 * blob.w()):
-                continue
-            elif color == 'blue' and (blob.w() > 1.7 * blob.h() or blob.h() > 1.7 * blob.w()):
-                continue
-
-            # 距离过滤（排除与已保存色块过近的色块）
-            cx, cy = blob.cx(), blob.cy()
-            keep = True
-            for saved_blob, _ in filtered:
-                d = self.calculate_distance(cx, cy, saved_blob.cx(), saved_blob.cy())
-                if d < self.DISTANCE_THRESHOLD:
-                    keep = False
-                    break
-            if keep:
-                filtered.append((blob, color))
-        return filtered
-
-    def process_kalman_color(self, img, blobs, tracker, color, Ts, center_list, kalman_coords_dict):
+    #                 w = x2 - x1
+    #                 h = y2 - y1
+    #                 cx = (x1 + x2) // 2
+    #                 cy = (y1 + y2) // 2
+    #                 color = LABEL_TO_COLOR[label]
+    #                 center.append((cx, cy, color))
+    #                 img.draw_rectangle((x1,y1,w,h), color=DRAW_COLORS[color])
+    #                 img.draw_cross(cx, cy, color=DRAW_COLORS[color])
+    #     return center
+    
+    def process_kalman_color(self, img, objects, tracker, color, Ts, center_list, kalman_coords_dict):
         """封装卡尔曼处理单颜色逻辑（棕/白/蓝通用）"""
         detected = False
-        target_blob = None
+        target_object = None
         
-        if blobs:
-            # 选择面积最大的色块
-            target_blob = max(blobs, key=lambda b: b.area())
-            cx, cy = target_blob.cx(), target_blob.cy()
-            w, h = target_blob.w(), target_blob.h()
-            
-            # 计算速度
-            dx_raw = (cx - tracker.last_cx) / Ts
-            dx = max(-MAX_SPEED, min(MAX_SPEED, dx_raw))
-            dy_raw = (cy - tracker.last_cy) / Ts
-            dy = max(-MAX_SPEED, min(MAX_SPEED, dy_raw))
+        if objects:
+            target_object = max(objects, key=lambda obj: (obj[2] - obj[0]) * img.width() * (obj[3] - obj[1]) * img.height())  # 选择置信度最高的目标
+            x1,y1,x2,y2,label,scores = target_object
+            x1 = int(x1 * img.width())
+            y1 = int(y1 * img.height())
+            x2 = int(x2 * img.width())
+            y2 = int(y2 * img.height())
+            w = x2 - x1
+            h = y2 - y1
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
 
-            # 构建6维新观测值Z
-            Z = np.array([cx, cy, w, h, dx, dy], dtype = np.float)
+            jump_too_large  = False
+            if tracker.first_detected:
+                distance_squared = (cx - tracker.last_cx)**2 + (cy - tracker.last_cy)**2
+                if distance_squared > (JUMP_KALMAN_THRESHOLD**2):
+                    jump_too_large = True
+            if not jump_too_large:
+                # 计算速度
+                dx_raw = (cx - tracker.last_cx) / Ts
+                dx = max(-MAX_SPEED, min(MAX_SPEED, dx_raw))
+                dy_raw = (cy - tracker.last_cy) / Ts
+                dy = max(-MAX_SPEED, min(MAX_SPEED, dy_raw))
 
-            # 第一次检测到目标时初始化卡尔曼
-            if not tracker.first_detected:
-                tracker.x_hat = np.array([cx, cy, w, h, 0, 0], dtype=np.float)
-                tracker.p = np.diag([10.0, 10.0, 5.0, 5.0, 100.0, 100.0])
-                tracker.first_detected = True
+                # 构建6维新观测值Z
+                Z = np.array([cx, cy, w, h, dx, dy], dtype = np.float)
 
-            # 卡尔曼滤波更新
-            tracker.kalman_filter(Z, Ts, True)
-            tracker.last_cx = cx
-            tracker.last_cy = cy
-            detected = True
+                # 第一次检测到目标时初始化卡尔曼
+                if not tracker.first_detected:
+                    tracker.x_hat = np.array([cx, cy, w, h, 0, 0], dtype=np.float)
+                    tracker.p = np.diag([10.0, 10.0, 5.0, 5.0, 100.0, 100.0])
+                    tracker.first_detected = True
 
-            # 绘制原始检测框
-            img.draw_rectangle(target_blob.rect(), color=DRAW_COLORS[color])
-            img.draw_cross(cx, cy, color=DRAW_COLORS[color])
+                # 卡尔曼滤波更新
+                tracker.kalman_filter(Z, Ts, True)
+                tracker.last_cx = cx
+                tracker.last_cy = cy
+                detected = True
+
+                # 绘制原始检测框
+                img.draw_rectangle((x1, y1, w, h), color=DRAW_COLORS[color])
+                img.draw_cross(cx, cy, color=DRAW_COLORS[color])
+            else:
+                detected = False  # 跳变过大视为无检测，进入预测阶段
 
         # 无检测时卡尔曼预测
         if not detected and tracker.first_detected:
@@ -384,18 +323,26 @@ class ColorDetector:
         else:
             kalman_coords_dict[color] = (SCREEN_CENTER_X, SCREEN_CENTER_Y)
         
-        return target_blob
+        return target_object
 
-    def draw_other_blobs(self, img, blobs, center_list):
+    def draw_other_objects(self, img, objects, center_list):
         """封装绘制其他颜色色块逻辑"""
-        for item in blobs:
-            blob = item[0]
-            color_name = item[1]
-            # 绘制色块
-            img.draw_rectangle(blob.rect(), color=DRAW_COLORS[color_name])
-            img.draw_cross(blob.cx(), blob.cy(), color=DRAW_COLORS[color_name])
-            # 添加到中心列表
-            center_list.append((blob.cx(), blob.cy(), color_name))
+        for item in objects:
+            obj, color_name = item
+            x1,y1,x2,y2,label,scores = obj
+            x1 = int(x1 * img.width())
+            y1 = int(y1 * img.height())
+            x2 = int(x2 * img.width())
+            y2 = int(y2 * img.height())
+            w = x2 - x1
+            h = y2 - y1
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
+
+            # 绘制
+            img.draw_rectangle((x1, y1, w, h), color=DRAW_COLORS[color_name])
+            img.draw_cross(cx, cy, color=DRAW_COLORS[color_name])
+            center_list.append((cx, cy, color_name))
 
 # ======================== 坐标矫正模块 ========================
 class CoordinateCorrection:
@@ -431,8 +378,8 @@ class CoordinateFilter:
 # ======================== 全局状态变量 ========================
 
 # 模式定义
-MODE_TARGET = 0          # 目标跟踪模式
-MODE_CORRECTION = 1      # 坐标校正
+MODE_CORRECTION = 0      # 坐标校正
+MODE_MODEL = 1           # 模型模式
 MODE_WAITING = 2         # 等待模式
 current_mode = MODE_WAITING
 
@@ -449,48 +396,20 @@ last_time = time.ticks_ms()
 # ======================== 工具函数 ========================
 def handle_uart_commands(uart):
     """处理串口命令，切换运行模式"""
-    global current_mode, ROI_INIT
+    global current_mode
     if uart.any():
         cmd = uart.read(1)
-        if cmd == b'T':
-            current_mode = MODE_TARGET
-            ROI_INIT = False
-            brown_tracker.reset()
-            white_tracker.reset()
-            blue_tracker.reset()
-        elif cmd == b'C':
+        if cmd == b'C':
             current_mode = MODE_CORRECTION
-            ROI_INIT = False
-            brown_tracker.reset()
-            white_tracker.reset()
-            blue_tracker.reset()
+        elif cmd == b'M':
+            current_mode = MODE_MODEL
         elif cmd == b'F':
             current_mode = MODE_WAITING
-            brown_tracker.reset()
-            white_tracker.reset()
-            blue_tracker.reset()
-
-def init_threshold():
-    """依据当前亮度自动匹配阈值"""
-    global LOCKED_THRESHOLD, LOCKED_TYPE
-    img = sensor.snapshot()
-
-    stats = img.get_statistics()
-    l_mean = stats.l_mean()
-
-    for type, (min_brightness, max_brightness) in BRIGHTNESS_RANGES.items():
-        if min_brightness <= l_mean <= max_brightness:
-            LOCKED_TYPE = type
-            LOCKED_THRESHOLD = THRESHOLD[LOCKED_TYPE]
-            return
-
-    LOCKED_TYPE = 'normal'
-    LOCKED_THRESHOLD = THRESHOLD['normal']
-    return
 
 # ======================== 初始化 ========================
 # 串口初始化
 uart = UART(UART_PORT, baudrate=UART_BAUDRATE)
+time.sleep_ms(100)  # 等待串口稳定
 
 # 摄像头初始化
 sensor.reset()
@@ -510,19 +429,16 @@ LED(4).on()
 time.sleep_ms(1000)
 LED(4).off()
 
-init_threshold()
-
 # LCD初始化
 lcd = seekfree.IPS200(1)
 lcd.full()
 
 # 创建模块实例
-color_detector = ColorDetector()
 tag_corrector = CoordinateCorrection()
+communicator = Communicator(uart)
 brown_tracker = KalmanTracker()
 white_tracker = KalmanTracker()
-blue_tracker = KalmanTracker()
-communicator = Communicator(uart)
+model_detector = ModelDetector(net)
 coordinate_filter = CoordinateFilter()
 
 # ======================== 主循环 ========================
@@ -547,52 +463,6 @@ while True:
         """
         continue
 
-    # 目标跟踪模式
-    elif current_mode == MODE_TARGET:
-        # 色块检测与筛选
-        all_blobs_with_color = color_detector.detect_colors(img)
-        filtered_blobs_with_color = color_detector.filter_all_blobs(all_blobs_with_color)
-
-        # 初始化变量
-        center = []  # 所有有效色块的中心坐标 (cx, cy, color)
-        target_pos = None  # 最终要发送的目标坐标
-        locked_blob = None  # 锁定的目标色块
-        target_color = ''
-        # is_sent = False # 是否发送了坐标
-
-        # 分离棕色、白色、蓝色与其它色块
-        brown_blobs = []
-        white_blobs = []
-        blue_blobs = []
-        other_blobs = []
-        for item in filtered_blobs_with_color:
-            blob = item[0]
-            # print(blob.w(), blob.h(),blob.density(), blob.pixels())
-            color = item[1]
-            if color == 'brown':
-                brown_blobs.append(blob)
-            elif color == 'white':
-                white_blobs.append(blob)
-            elif color == 'blue':
-                blue_blobs.append(blob)
-            else:
-                other_blobs.append((blob, color))
-
-        color_detector.process_kalman_color(img, brown_blobs, brown_tracker, 'brown', Ts, center, kalman_coords)
-        color_detector.process_kalman_color(img, white_blobs, white_tracker, 'white', Ts, center, kalman_coords)
-        color_detector.process_kalman_color(img, blue_blobs, blue_tracker, 'blue', Ts, center, kalman_coords)
-        color_detector.draw_other_blobs(img, other_blobs, center)
-        if center:
-            target = coordinate_filter.filter_coordinates(center)
-            target_x = target[0]
-            target_y = target[1]
-            target_color = target[2]
-            communicator.send_coordinate(target_x, target_y, target_color)
-        #     is_sent = True
-        # displayed_text = 'YES' if is_sent else 'NO'
-        # displayed_text_color = DRAW_COLORS['green'] if is_sent else DRAW_COLORS['red']
-        # img.draw_string(5, 5, displayed_text, color = displayed_text_color, scale = 2)
-
     # 坐标校正模式
     elif current_mode == MODE_CORRECTION:
         tag_center = tag_corrector.coordinate_correction(img)
@@ -600,6 +470,32 @@ while True:
             tag_cx, tag_cy, rotation = tag_center
             rotation = (180 * rotation) / math.pi + 90
             communicator.send_coordinate_with_angle(tag_cx, tag_cy, rotation)
+
+    # 模型模式
+    elif current_mode == MODE_MODEL:
+        is_sent = False # 是否发送了坐标
+        center = [] # 本帧检测到的目标中心列表
+
+        objects = model_detector.detect(img)
+        brown_bear = [obj for obj in objects if LABEL_TO_COLOR[obj[4]] == 'brown' and obj[5] > 0.3]
+        white_bear = [obj for obj in objects if LABEL_TO_COLOR[obj[4]] == 'white' and obj[5] > 0.3]
+        other_objects = [(obj, LABEL_TO_COLOR[obj[4]]) for obj in objects if LABEL_TO_COLOR[obj[4]] in ['red','blue','green'] and obj[5] > 0.6]
+
+        model_detector.process_kalman_color(img, brown_bear, brown_tracker, 'brown', Ts, center, kalman_coords)
+        model_detector.process_kalman_color(img, white_bear, white_tracker, 'white', Ts, center, kalman_coords)
+        model_detector.draw_other_objects(img, other_objects, center)
+        
+        if center:
+            target = coordinate_filter.filter_coordinates(center)
+            target_x = target[0]
+            target_y = target[1]
+            target_color = target[2]
+            communicator.send_coordinate(target_x, target_y, target_color)
+            is_sent = True
+
+        displayed_text = 'YES' if is_sent else 'NO'
+        displayed_text_color = DRAW_COLORS['green'] if is_sent else DRAW_COLORS['red']
+        img.draw_string(5, 5, displayed_text, color = displayed_text_color, scale = 2)
 
     # 显示图像到LCD
     lcd.show_image(img, SCREEN_WIDTH, SCREEN_HEIGHT, zoom=0)

@@ -33,12 +33,14 @@ tof：意法半导体VL53L4CD模块
 | --- | --- | --- |
 | [`main_car/`](main_car/) | 主车：扫描、物体选择、路径规划、视觉伺服、协同搬运 | [`main_car/user_main.py#L231`](main_car/user_main.py#L231) |
 | [`slave_car/`](slave_car/) | 从车：接收主车指令、惯导、伺服、环绕、TOF 距离控制 | [`slave_car/user_main.py#L316`](slave_car/user_main.py#L316) |
-| [`openmv/`](openmv/) | OpenMV / OpenART 视觉侧程序 | [`openmv/finish_competition/main_openart.py#L149`](openmv/finish_competition/main_openart.py#L149) |
+| [`openmv/`](openmv/) | OpenMV / OpenART 视觉侧程序 | 主车视觉：[`openmv/plus/main_final_single.py`](openmv/plus/main_final_single.py)；从车视觉：[`openmv/plus/slave_final_single.py`](openmv/plus/slave_final_single.py) |
 | [`assisting car/`](assisting%20car/) | 辅助车相关程序和资料 | - |（已弃用）
 | [`assiting car camera/`](assiting%20car%20camera/) | 辅助车摄像头相关程序和资料 | - |（已弃用）
 | [`tools/`](tools/) | 上位机、路径与障碍调试工具 | [`tools/boundary_debug_viewer.py#L362`](tools/boundary_debug_viewer.py#L362) |
 | `seekfree_demo/` | 逐飞底层示例 | - |
 | `stubs/` | MicroPython 类型桩文件 | - |
+
+视觉识别模型（YOLOv3 tflite）存放在 [`openmv/plus/yolo3_iou_smartcar_final_with_post_processing.tflite`](openmv/plus/yolo3_iou_smartcar_final_with_post_processing.tflite)，运行时需拷贝至 OpenMV/OpenART 的 SD 卡根目录（`/sd/`），由 `openmv/plus/main_final_single.py` 与 `openmv/plus/slave_final_single.py` 加载。
 
 ## Main-Car Modules
 

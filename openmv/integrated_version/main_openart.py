@@ -322,7 +322,7 @@ class ColorDetector:
             blue_area = BLUE_NORMAL_AREA
 
         # 检测各颜色色块
-        brown_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=260, area_threshold=260, merge=True)
+        brown_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=400, area_threshold=400, merge=True)
         white_blobs = img.find_blobs(current_threshold['white'], pixels_threshold=white_pix, area_threshold=white_area, merge=True)
         red_blobs   = img.find_blobs(current_threshold['red'],   pixels_threshold=110,  area_threshold=110,  merge=True)
         green_blobs = img.find_blobs(current_threshold['green'], pixels_threshold=40,  area_threshold=40,  merge=True)

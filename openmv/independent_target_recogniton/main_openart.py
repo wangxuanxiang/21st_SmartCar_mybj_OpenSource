@@ -308,7 +308,7 @@ class ColorDetector:
             blue_area = BLUE_NORMAL_AREA
 
         # 检测各颜色色块
-        brown_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=260, area_threshold=260, merge=True)
+        brown_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=400, area_threshold=400, merge=True)
         white_blobs = img.find_blobs(current_threshold['white'], pixels_threshold=white_pix, area_threshold=white_area, merge=True)
         red_blobs   = img.find_blobs(current_threshold['red'],   pixels_threshold=110,  area_threshold=110,  merge=True)
         green_blobs = img.find_blobs(current_threshold['green'], pixels_threshold=40,  area_threshold=40,  merge=True)
@@ -643,9 +643,9 @@ clock = time.clock()
 
 init_threshold()
 
-# LCD初始化
-lcd = seekfree.IPS200(3)
-lcd.full()
+# # LCD初始化
+# lcd = seekfree.IPS200(3)
+# lcd.full()
 
 # 创建模块实例
 color_detector = ColorDetector()
@@ -725,11 +725,11 @@ while True:
             target_y = target[1]
             target_color = target[2]
             communicator.send_coordinate(target_x, target_y, target_color)
-            is_sent = True
-        # 锁定状态但没识别到目标和未锁定状态但未检测到色块，均不发送坐标
-        displayed_text = 'YES' if is_sent else 'NO'
-        displayed_text_color = DRAW_COLORS['green'] if is_sent else DRAW_COLORS['red']
-        img.draw_string(5, 5, displayed_text, color = displayed_text_color, scale = 2)
+            # is_sent = True
+        # # 锁定状态但没识别到目标和未锁定状态但未检测到色块，均不发送坐标
+        # displayed_text = 'YES' if is_sent else 'NO'
+        # displayed_text_color = DRAW_COLORS['green'] if is_sent else DRAW_COLORS['red']
+        # img.draw_string(5, 5, displayed_text, color = displayed_text_color, scale = 2)
 
     # 坐标校正模式
     elif current_mode == MODE_CORRECTION:
@@ -740,5 +740,5 @@ while True:
             communicator.send_coordinate_with_angle(tag_cx, tag_cy, rotation)
 
     # 显示图像到LCD
-    lcd.show_image(img, SCREEN_WIDTH, SCREEN_HEIGHT, zoom=0)
+    # lcd.show_image(img, SCREEN_WIDTH, SCREEN_HEIGHT, zoom=0)
     # print(clock.fps())

@@ -31,6 +31,10 @@ SCREEN_CENTER_Y = SCREEN_HEIGHT // 2  # 60
 KALMAN_MAX_LOST_FRAMES = 3
 MAX_SPEED = 80
 
+# 锁定逻辑配置
+LOCK_JUMP_THRESHOLD = 20  # 坐标跳变超过20像素视为同色干扰
+LOCK_MAX_LOST_FRAMES = 3  # 丢失3帧解除锁定
+
 # 通信协议常量
 PROTOCOL_HEADER1 = 0xA5
 PROTOCOL_HEADER2_COORD = 0xA6
@@ -66,8 +70,8 @@ THRESHOLD = {'dark':{
     (14, 61, -7, 18, 12, 52)], # 30
     'red':[(15, 39, 18, 59, 17, 49), # 27
     (5, 34, 8, 52, -7, 41)], # 30
-    'green':[(35, 84, -47, -20, -20, 87), # 27(new)
-    # (35, 84, -47, -14, -20, 87), # 27
+    'green':[# (35, 84, -47, -14, -20, 87), # 27
+    (35, 84, -47, -20, -20, 87), # 27(new)
     # (32, 85, -43, -12, 13, 84), # 30
     (32, 85, -43, -20, 13, 84)], # 30(new)
     'blue':[(25, 53, -29, -9, -26, -8), # 27
@@ -86,14 +90,14 @@ THRESHOLD = {'dark':{
     (34, 73, -36, -17, 24, 74), # 46(new)
     # (71, 98, -52, -10, 39, 98)], # 50
     (71, 98, -52, -10, 68, 98)], # 50(new)
-    'blue':[(33, 79, -29, -2, -52, -30), # 45(new)
-    # (33, 79, -29, -2, -52, -24), # 45
+    'blue':[(33, 79, -29, -2, -52, -24), # 45
     (33, 74, -31, -8, -46, -16), # 42
     (44, 83, -33, -6, -54, -27)], # 50
-    'white':[(56, 100, -18, 0, -9, 16), # 45
+    'white':[# (56, 100, -18, 0, -9, 16), # 45
     (53, 100, -30, -2, -2, 53), # 46(new)
     (59, 100, -26, -2, 3, 56), # 50(new)
-    (69, 100, -23, 5, -5, 24)] # 50
+    # (69, 100, -23, 5, -5, 24)
+    ] # 50
 }, 'bright':{
     'brown':[(40, 83, -6, 22, 11, 69)],
     'red':[(5, 24, 12, 41, -5, 37), (30, 58, 39, 83, 10, 51)],
@@ -105,14 +109,27 @@ THRESHOLD = {'dark':{
 
 # 亮度区间划分
 BRIGHTNESS_RANGES = {
-    'dark':(0, 40),
-    'normal':(40, 75),
+    'dark':(0, 45),
+    'normal':(45, 75),
     'bright':(75, 100)
 }
 
 # 锁定的阈值集
 LOCKED_THRESHOLD = None
 LOCKED_TYPE = ''
+
+# 像素和面积阈值
+WHITE_NORMAL_PIXELS = 400
+WHITE_NORMAL_AREA = 400
+
+WHITE_DARK_PIXELS = 320
+WHITE_DARK_AREA = 320
+
+BLUE_NORMAL_PIXELS = 130
+BLUE_NORMAL_AREA = 130
+
+BLUE_DARK_PIXELS = 80
+BLUE_DARK_AREA = 80
 
 # ======================== 通信模块 ========================
 class Communicator:
@@ -176,9 +193,6 @@ class Communicator:
             PROTOCOL_FOOTER
         )
         self.uart.write(data)
-
-    def warn(self):
-        self.uart.write('N'.encode('utf-8'))
 
 # ======================== 卡尔曼跟踪模块 ========================
 class KalmanTracker:
@@ -266,7 +280,7 @@ class KalmanTracker:
             self.p = p_minus
 
         return self.x_hat
-    
+
 # ======================== 颜色检测模块 ========================
 class ColorDetector:
     # 距离阈值（过滤过近的色块）
@@ -277,36 +291,67 @@ class ColorDetector:
         """计算两点间欧氏距离"""
         return (x1 - x2)**2 + (y1 - y2)**2
 
-    def detect_colors(self, img):
+    def detect_colors(self, img, target_color = ''):
         """检测所有颜色色块并返回（带颜色标签）"""
         current_threshold = LOCKED_THRESHOLD
-        # 检测各颜色色块
-        brown_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=140, area_threshold=140, merge=True)
-        white_blobs = img.find_blobs(current_threshold['white'], pixels_threshold=200, area_threshold=200, merge=True)
-        red_blobs   = img.find_blobs(current_threshold['red'],   pixels_threshold=65,  area_threshold=65,  merge=True)
-        green_blobs = img.find_blobs(current_threshold['green'], pixels_threshold=30,  area_threshold=30,  merge=True)
-        blue_blobs  = img.find_blobs(current_threshold['blue'],  pixels_threshold=80,  area_threshold=80,  merge=True)
 
-        # 整合所有色块并添加颜色标签
-        all_blobs = []
-        for blob in brown_blobs: all_blobs.append((blob, 'brown'))
-        for blob in white_blobs: all_blobs.append((blob, 'white'))
-        for blob in red_blobs:   all_blobs.append((blob, 'red'))
-        for blob in green_blobs: all_blobs.append((blob, 'green'))
-        for blob in blue_blobs:  all_blobs.append((blob, 'blue'))
-        return all_blobs
+        # 根据当前亮度模式自动选择白色阈值
+        if LOCKED_TYPE == 'dark':
+            white_pix = WHITE_DARK_PIXELS
+            white_area = WHITE_DARK_AREA
+            blue_pix = BLUE_DARK_PIXELS
+            blue_area = BLUE_DARK_AREA
+        else:
+            white_pix = WHITE_NORMAL_PIXELS
+            white_area = WHITE_NORMAL_AREA
+            blue_pix = BLUE_NORMAL_PIXELS
+            blue_area = BLUE_NORMAL_AREA
+
+        # 检测各颜色色块
+        if target_color:
+            blobs = []
+            if target_color == 'brown':
+                target_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=400, area_threshold=400, merge=True)
+            elif target_color == 'white':
+                target_blobs = img.find_blobs(current_threshold['white'], pixels_threshold=white_pix, area_threshold=white_area, merge=True)
+            elif target_color == 'red':
+                target_blobs   = img.find_blobs(current_threshold['red'],   pixels_threshold=110,  area_threshold=110,  merge=True)
+            elif target_color == 'green':
+                target_blobs = img.find_blobs(current_threshold['green'], pixels_threshold=40,  area_threshold=40,  merge=True)
+            elif target_color == 'blue':
+                target_blobs  = img.find_blobs(current_threshold['blue'],  pixels_threshold=blue_pix,  area_threshold=blue_area,  merge=True)
+            else:
+                target_blobs = []
+
+            for blob in target_blobs:blobs.append((blob, target_color))
+            return blobs
+        else:
+            brown_blobs = img.find_blobs(current_threshold['brown'], pixels_threshold=400, area_threshold=400, merge=True)
+            white_blobs = img.find_blobs(current_threshold['white'], pixels_threshold=white_pix, area_threshold=white_area, merge=True)
+            red_blobs   = img.find_blobs(current_threshold['red'],   pixels_threshold=110,  area_threshold=110,  merge=True)
+            green_blobs = img.find_blobs(current_threshold['green'], pixels_threshold=40,  area_threshold=40,  merge=True)
+            blue_blobs  = img.find_blobs(current_threshold['blue'],  pixels_threshold=blue_pix,  area_threshold=blue_area,  merge=True) # bright 130 dark <110
+
+            # 整合所有色块并添加颜色标签
+            all_blobs = []
+            for blob in brown_blobs: all_blobs.append((blob, 'brown'))
+            for blob in white_blobs: all_blobs.append((blob, 'white'))
+            for blob in red_blobs:   all_blobs.append((blob, 'red'))
+            for blob in green_blobs: all_blobs.append((blob, 'green'))
+            for blob in blue_blobs:  all_blobs.append((blob, 'blue'))
+            return all_blobs
 
     def filter_all_blobs(self, blobs):
         """过滤无效色块（密度、像素数、长宽比、距离）"""
         filtered = []
         for blob, color in blobs:
             # 密度过滤（排除稀疏色块）
-            if blob.density() < 0.4 and color not in ('white', 'brown'):
+            if blob.density() < 0.4 and color not in('white', 'brown', 'blue'):
                 continue
-            elif color in ('white', 'brown') and blob.density() < 0.3:
+            elif color in ('white', 'brown', 'blue') and blob.density() < 0.3:
                 continue
-            #elif color == 'blue' and blob.density() < 0.4:
-                #continue
+            elif color == 'green' and blob.density() < 0.45:
+                continue
 
             # 长宽比过滤（不同颜色有不同规则）
             if color == 'brown' and (blob.w() > 3.5 * blob.h() or blob.h() > 3.5 * blob.w()):
@@ -315,15 +360,14 @@ class ColorDetector:
                 continue
             elif color == 'green' and (blob.w() > 2 * blob.h() or blob.h() > 2 * blob.w()):
                 continue
-            elif color == 'blue' and (blob.w() > 1.7 * blob.h() or blob.h() > 1.7 * blob.w()):
+            elif color == 'blue' and (blob.w() > 1.5 * blob.h() or blob.h() > 1.5 * blob.w()):
                 continue
 
             # 距离过滤（排除与已保存色块过近的色块）
             cx, cy = blob.cx(), blob.cy()
             keep = True
             for saved_blob, _ in filtered:
-                d = self.calculate_distance(cx, cy, saved_blob.cx(), saved_blob.cy())
-                if d < self.DISTANCE_THRESHOLD:
+                if self.calculate_distance(cx, cy, saved_blob.cx(), saved_blob.cy()) < self.DISTANCE_THRESHOLD:
                     keep = False
                     break
             if keep:
@@ -334,13 +378,13 @@ class ColorDetector:
         """封装卡尔曼处理单颜色逻辑（棕/白/蓝通用）"""
         detected = False
         target_blob = None
-        
+
         if blobs:
             # 选择面积最大的色块
             target_blob = max(blobs, key=lambda b: b.area())
             cx, cy = target_blob.cx(), target_blob.cy()
             w, h = target_blob.w(), target_blob.h()
-            
+
             # 计算速度
             dx_raw = (cx - tracker.last_cx) / Ts
             dx = max(-MAX_SPEED, min(MAX_SPEED, dx_raw))
@@ -383,7 +427,7 @@ class ColorDetector:
             kalman_coords_dict[color] = (kcx, kcy)
         else:
             kalman_coords_dict[color] = (SCREEN_CENTER_X, SCREEN_CENTER_Y)
-        
+
         return target_blob
 
     def draw_other_blobs(self, img, blobs, center_list):
@@ -396,6 +440,125 @@ class ColorDetector:
             img.draw_cross(blob.cx(), blob.cy(), color=DRAW_COLORS[color_name])
             # 添加到中心列表
             center_list.append((blob.cx(), blob.cy(), color_name))
+
+
+# ======================== 锁定逻辑模块 ========================
+class TargetLocker:
+    def __init__(self, jump_threshold, max_lost_frames):
+        self.is_locked = False        # 是否锁定目标
+        self.locked_color = ''        # 锁定的目标颜色
+        self.locked_cx = SCREEN_CENTER_X  # 锁定目标的初始x坐标
+        self.locked_cy = SCREEN_CENTER_Y  # 锁定目标的初始y坐标
+        self.last_cx = SCREEN_CENTER_X    # 上一帧锁定目标的x坐标
+        self.last_cy = SCREEN_CENTER_Y    # 上一帧锁定目标的y坐标
+        self.lost_count = 0           # 锁定目标丢失帧数
+        self.JUMP_THRESHOLD = jump_threshold
+        self.MAX_LOST_FRAMES = max_lost_frames
+
+    def reset(self):
+        """重置锁定状态"""
+        self.is_locked = False
+        self.locked_color = ''
+        self.locked_cx = SCREEN_CENTER_X
+        self.locked_cy = SCREEN_CENTER_Y
+        self.last_cx = SCREEN_CENTER_X
+        self.last_cy = SCREEN_CENTER_Y
+        self.lost_count = 0
+
+    def is_jump_too_large(self, cx, cy):
+        """判断坐标跳变是否过大（同色干扰）"""
+        squared_distance = (cx - self.last_cx)**2 + (cy - self.last_cy)**2
+        return squared_distance > (self.JUMP_THRESHOLD**2)
+
+    def process_lock(self, filtered_blobs, kalman_coords):
+        """处理锁定逻辑，返回目标位置、目标颜色、锁定的色块"""
+        target_pos = None
+        target_color = ''
+        locked_blob = None
+
+        if filtered_blobs:
+            # 未锁定：选择y最大的目标作为锁定对象
+            if not self.is_locked:
+                max_y_blob, max_y_color = max(
+                    filtered_blobs,
+                    key=lambda item: item[0].cy()
+                )
+                self.locked_color = max_y_color
+                if self.locked_color in kalman_coords:
+                    self.locked_cx, self.locked_cy = kalman_coords[self.locked_color]
+                else:
+                    self.locked_cx = max_y_blob.cx()
+                    self.locked_cy = max_y_blob.cy()
+                self.last_cx = self.locked_cx
+                self.last_cy = self.locked_cy
+                self.is_locked = True
+                self.lost_count = 0
+                target_pos = (self.locked_cx, self.locked_cy)
+                target_color = max_y_color
+                locked_blob = max_y_blob
+            # 已锁定：仅筛选同色目标，且坐标跳变不超过阈值
+            else:
+                # 筛选同色目标
+                same_color_blobs = [
+                    item for item in filtered_blobs
+                    if item[1] == self.locked_color
+                ]
+                valid_blobs = []
+                for blob, color in same_color_blobs:
+                    cx, cy = blob.cx(), blob.cy()
+                    # 跳变不超过阈值才视为有效目标
+                    if not self.is_jump_too_large(cx, cy):
+                        valid_blobs.append((blob, cx, cy))
+
+                if valid_blobs:
+                    # 选同色目标中最接近上一帧锁定位置的
+                    best_blob, best_cx, best_cy = min(
+                        valid_blobs,
+                        key=lambda item:(item[1]-self.last_cx)**2 + (item[2]-self.last_cy)**2
+                    )
+                    if self.locked_color in kalman_coords:
+                        target_pos = kalman_coords[self.locked_color]
+                    else:
+                        target_pos = (best_cx, best_cy)
+                    self.last_cx = best_cx
+                    self.last_cy = best_cy
+                    self.lost_count = 0
+                    target_color = self.locked_color
+                    locked_blob = best_blob
+                else:
+                    # 无有效同色目标，计数+1
+                    self.lost_count += 1
+                    if self.locked_color in kalman_coords and self.is_locked:
+                        target_pos = kalman_coords[self.locked_color]
+                    else:
+                        target_pos = None
+        else:
+            # 无任何色块，锁定计数+1
+            if self.is_locked:
+                self.lost_count += 1
+                if self.locked_color in kalman_coords:
+                    target_pos = kalman_coords[self.locked_color]
+                else:
+                    target_pos = None
+            else:
+                target_pos = None
+
+        # 超过最大丢失帧数，解除锁定
+        if self.is_locked and self.lost_count >= self.MAX_LOST_FRAMES:
+            self.reset()
+            target_color = ''
+
+        return target_pos, target_color, locked_blob
+
+    def draw_lock_mark(self, img, locked_blob, kalman_coords):
+        """绘制锁定标识（黑色圆）"""
+        if self.is_locked and locked_blob is not None:
+            if self.locked_color in kalman_coords:
+                lock_cx, lock_cy = kalman_coords[self.locked_color]
+            else:
+                lock_cx = locked_blob.cx()
+                lock_cy = locked_blob.cy()
+            img.draw_circle(lock_cx, lock_cy, 5, color=DRAW_COLORS['black'], thickness=2)
 
 # ======================== 坐标矫正模块 ========================
 class CoordinateCorrection:
@@ -416,17 +579,6 @@ class CoordinateCorrection:
             img.draw_cross(tag_cx, tag_cy, color=(0, 255, 0))
 
         return (tag_cx, tag_cy, rotation) if tag_cx is not None else None
-    
-# ======================== 坐标筛选模块 ========================
-class CoordinateFilter:
-    def __init__(self):
-        self.datum_coordinate = (80, 85)
-
-    def filter_coordinates(self, center):
-        dx = self.datum_coordinate[0]
-        dy = self.datum_coordinate[1]
-
-        return min(center, key = lambda c:(c[0] - dx) ** 2 + (c[1] - dy) ** 2)
 
 # ======================== 全局状态变量 ========================
 
@@ -435,6 +587,9 @@ MODE_TARGET = 0          # 目标跟踪模式
 MODE_CORRECTION = 1      # 坐标校正
 MODE_WAITING = 2         # 等待模式
 current_mode = MODE_WAITING
+
+# 要寻找的目标物体颜色
+target_object_color = ''
 
 # 存储各颜色卡尔曼坐标的字典
 kalman_coords = {
@@ -448,27 +603,40 @@ last_time = time.ticks_ms()
 
 # ======================== 工具函数 ========================
 def handle_uart_commands(uart):
-    """处理串口命令，切换运行模式"""
-    global current_mode, ROI_INIT
+    """处理串口命令，切换运行模式或目标物体"""
+    global current_mode, target_object_color
     if uart.any():
         cmd = uart.read(1)
+
+        def reset_all():
+            brown_tracker.reset()
+            white_tracker.reset()
+            blue_tracker.reset()
+            target_locker.reset()
+        
         if cmd == b'T':
             current_mode = MODE_TARGET
-            ROI_INIT = False
-            brown_tracker.reset()
-            white_tracker.reset()
-            blue_tracker.reset()
+            reset_all()
         elif cmd == b'C':
             current_mode = MODE_CORRECTION
-            ROI_INIT = False
-            brown_tracker.reset()
-            white_tracker.reset()
-            blue_tracker.reset()
+            reset_all()
         elif cmd == b'F':
             current_mode = MODE_WAITING
-            brown_tracker.reset()
-            white_tracker.reset()
-            blue_tracker.reset()
+            reset_all()
+        elif current_mode == MODE_TARGET:
+            color_map = {
+                b's': 'red',
+                b'e': 'blue',
+                b't': 'green',
+                b'b': 'brown',
+                b'w': 'white'
+            }
+            if cmd in color_map:
+                target_object_color = color_map[cmd]
+                reset_all()
+            elif cmd == b'c':
+                target_object_color = ''
+                reset_all()
 
 def init_threshold():
     """依据当前亮度自动匹配阈值"""
@@ -491,6 +659,7 @@ def init_threshold():
 # ======================== 初始化 ========================
 # 串口初始化
 uart = UART(UART_PORT, baudrate=UART_BAUDRATE)
+time.sleep_ms(100)  # 等待串口稳定
 
 # 摄像头初始化
 sensor.reset()
@@ -523,7 +692,8 @@ brown_tracker = KalmanTracker()
 white_tracker = KalmanTracker()
 blue_tracker = KalmanTracker()
 communicator = Communicator(uart)
-coordinate_filter = CoordinateFilter()
+# 初始化锁定类实例
+target_locker = TargetLocker(LOCK_JUMP_THRESHOLD, LOCK_MAX_LOST_FRAMES)
 
 # ======================== 主循环 ========================
 while True:
@@ -540,17 +710,12 @@ while True:
 
     # 等待模式：无操作
     if current_mode == MODE_WAITING:
-        """
-        stats = img.get_statistics()
-        l_mean = stats.l_mean()
-        print(l_mean)
-        """
         continue
 
     # 目标跟踪模式
     elif current_mode == MODE_TARGET:
         # 色块检测与筛选
-        all_blobs_with_color = color_detector.detect_colors(img)
+        all_blobs_with_color = color_detector.detect_colors(img, target_object_color)
         filtered_blobs_with_color = color_detector.filter_all_blobs(all_blobs_with_color)
 
         # 初始化变量
@@ -582,13 +747,24 @@ while True:
         color_detector.process_kalman_color(img, white_blobs, white_tracker, 'white', Ts, center, kalman_coords)
         color_detector.process_kalman_color(img, blue_blobs, blue_tracker, 'blue', Ts, center, kalman_coords)
         color_detector.draw_other_blobs(img, other_blobs, center)
-        if center:
-            target = coordinate_filter.filter_coordinates(center)
+
+        target_pos, target_color, locked_blob = target_locker.process_lock(filtered_blobs_with_color, kalman_coords)
+        target_locker.draw_lock_mark(img, locked_blob, kalman_coords)
+
+        # 发送目标坐标
+        if target_locker.is_locked and target_pos is not None:
+            # 锁定状态：发送锁定目标坐标
+            communicator.send_coordinate(target_pos[0], target_pos[1], target_locker.locked_color)
+            # is_sent = True
+        elif not target_locker.is_locked and center:
+            # 未锁定：按原有逻辑选y最大的坐标
+            target = max(center, key=lambda coordinate: coordinate[1])
             target_x = target[0]
             target_y = target[1]
             target_color = target[2]
             communicator.send_coordinate(target_x, target_y, target_color)
-        #     is_sent = True
+            # is_sent = True
+        # # 锁定状态但没识别到目标和未锁定状态但未检测到色块，均不发送坐标
         # displayed_text = 'YES' if is_sent else 'NO'
         # displayed_text_color = DRAW_COLORS['green'] if is_sent else DRAW_COLORS['red']
         # img.draw_string(5, 5, displayed_text, color = displayed_text_color, scale = 2)
@@ -603,4 +779,4 @@ while True:
 
     # 显示图像到LCD
     lcd.show_image(img, SCREEN_WIDTH, SCREEN_HEIGHT, zoom=0)
-    # (clock.fps())
+    # print(clock.fps())

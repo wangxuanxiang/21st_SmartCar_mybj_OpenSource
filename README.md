@@ -374,7 +374,9 @@ ps.若连续80帧未识别到目标则自动降速，连续150帧丢失则判定
 由于每次旋转orbit会消耗1点几秒的时间，为了缩短时间，我们改进了planB直接旋转换边来减少旋转orbit时间，但是只有在目标物体推动方向反向侧有空余使才会换边，当有物体时仍用原有orbit逻辑，保证不会打飞物体
 
 #换边逻辑
-2.根据objectplanner的规划，若换边，通过规划出的矩形rect进入或绕过中心矩形进行换边后直接推动
+
+2.根据objectplanner的规划，若换边，通过规划出的矩形rect进入或绕过中心矩形进行换边后直接推动。
+生成rect：[`find_nine_grid_blank`](main_car/ant_boundary_plan.py#L480)[`judge_object_character`](main_car/ant_boundary_plan.py#L526)
 
 ![换边逻辑](gifs/change_side.gif)
 

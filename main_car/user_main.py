@@ -387,21 +387,6 @@ def time_pit3_handler(timer) -> None:
 
     # 任务执行机
     task_machine()
-    
-    # 视觉伺服测试程序
-    #test_vision_servo()
-
-    # 搬运控制测试程序
-    # test_moving()
-
-    # 边线和apriltag码校准测试程序
-    # test_apriltag_calibrate()
-
-    # 环绕物体测试程序
-    # test_orbit()
-
-    # 自转测试程序
-    # test_spin()
 
     pass
 

@@ -370,6 +370,7 @@ def time_pit1_handler(time):
     # 设置电机pwm输出
     my_car.set_motor_pwm()
 
+    # 
     # 更新负压风扇的高电平时间
     """
     if my_fan.if_fan:
